@@ -1,0 +1,11 @@
+{
+  "cv_mean_auc": 0.5559878269140831,
+  "cv_std_auc": 0.016063376806924583,
+  "cv_n": 5,
+  "cv_95ci_lower": 0.5360425102433435,
+  "cv_95ci_upper": 0.5759331435848227,
+  "test_auc": 0.562260109595716,
+  "baseline_auc": 0.489076,
+  "model_path": "c:\\Users\\elad\\Desktop\\rnd\\VI\\wellco_churn\\models\\best_model_20251112T124306Z.joblib",
+  "predictions_path": "c:\\Users\\elad\\Desktop\\rnd\\VI\\wellco_churn\\outputs\\test_predictions.csv"
+}
