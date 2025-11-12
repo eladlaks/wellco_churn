@@ -2,3 +2,4 @@
 .github/copilot-instructions.md
 models/**
 **/__pycache__/**
+outputs/**

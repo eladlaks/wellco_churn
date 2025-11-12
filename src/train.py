@@ -8,110 +8,21 @@ import joblib
 from scipy import stats
 import json
 from datetime import datetime
-from process_datasets import get_web_feats
+import sys
 import yaml
 
+
+# ensure repository root is on sys.path based on this file's location (works regardless of cwd)
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(repo_root)  # add repo root so `src` package can be imported
+from src.process_datasets import get_web_feats
+from src.process_datasets import aggregate_features
+from src.eval import read_baseline_auc
+
+
 # Load the YAML config file
-with open("wellco_churn\\config.yaml", "r") as f:
+with open(os.path.join(repo_root, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
-
-
-def aggregate_features(data_dir):
-    # Helper to accept either canonical filenames or ones prefixed with 'test_'
-    def pick(path_dir, name):
-        p1 = os.path.join(path_dir, name)
-        p2 = os.path.join(path_dir, f"test_{name}")
-        if os.path.exists(p1):
-            return p1
-        if os.path.exists(p2):
-            return p2
-        return p1  # default (may not exist)
-
-    app_path = pick(data_dir, "app_usage.csv")
-    web_path = pick(data_dir, "web_visits.csv")
-    claims_path = pick(data_dir, "claims.csv")
-    labels_path = pick(data_dir, "churn_labels.csv")
-
-    # Read files (some files may be missing in tiny test fixtures; handle gracefully)
-    if os.path.exists(app_path):
-        app = pd.read_csv(app_path)
-        app_feats = app.groupby("member_id").size().rename("session_count")
-    else:
-        app_feats = pd.Series(dtype=int, name="session_count")
-
-    if os.path.exists(web_path):
-        web = pd.read_csv(web_path)
-
-        try:
-
-            web_feats = get_web_feats(web_path, config)
-            # normalize return to Series indexed by member_id with a sensible name
-            if isinstance(web_feats, pd.DataFrame):
-                if "member_id" in web_feats.columns:
-                    web_feats = web_feats.set_index("member_id")
-                # if single-column DF, convert to Series
-                if web_feats.shape[1] == 1:
-                    web_feats = web_feats.iloc[:, 0]
-            if isinstance(web_feats, pd.Series):
-                if web_feats.name is None:
-                    web_feats = web_feats.rename("web_visit_count")
-        except Exception:
-            # fallback to simple aggregation if get_web_feats is not available/applicable
-            web = pd.read_csv(web_path)
-            web_feats = web.groupby("member_id").size().rename("web_visit_count")
-    else:
-        web_feats = pd.Series(dtype=int, name="web_visit_count")
-
-    if os.path.exists(claims_path):
-        claims = pd.read_csv(claims_path)
-        claims_count = claims.groupby("member_id").size().rename("claims_count")
-        # flags for some ICD codes of interest
-        codes = ["E11.9", "I10", "Z71.3"]
-        for code in codes:
-            col = f"has_{code.replace('.', '_')}"
-            flag = claims["icd_code"].fillna("").str.startswith(code)
-            flag_series = claims.loc[flag].groupby("member_id").size().rename(col)
-            # convert counts to 1
-            flag_series = (flag_series >= 1).astype(int)
-            claims_count = (
-                claims_count.to_frame().join(flag_series, how="left")
-                if isinstance(claims_count, pd.Series)
-                else claims_count.join(flag_series, how="left")
-            )
-        claims_feats = claims_count
-    else:
-        # empty frame with default columns
-        claims_feats = pd.DataFrame(
-            columns=["claims_count", "has_E11_9", "has_I10", "has_Z71_3"]
-        )
-
-    # Combine feature frames
-    feats = pd.concat([app_feats, web_feats, claims_feats], axis=1)
-    feats = feats.fillna(0)
-
-    # Read labels
-    labels = pd.read_csv(labels_path)
-    labels = labels.set_index("member_id")
-
-    # Merge
-    df = labels.join(feats, how="left")
-    df = df.fillna(0)
-
-    return df.reset_index()
-
-
-def read_baseline_auc(baseline_path):
-    if not os.path.exists(baseline_path):
-        return None
-    with open(baseline_path, "r") as f:
-        for line in f:
-            if "=" in line:
-                parts = line.strip().split("=")
-                try:
-                    return float(parts[1])
-                except:
-                    continue
-    return None
 
 
 def run():
@@ -120,15 +31,11 @@ def run():
     test_dir = os.path.join(repo_root, "data", "test")
 
     print("Aggregating train features...")
-    train = aggregate_features(train_dir)
+    train = aggregate_features(train_dir, config)
     print("Aggregating test features...")
-    test = aggregate_features(test_dir)
-
-    feature_cols = [
-        c
-        for c in train.columns
-        if c not in ["member_id", "signup_date", "churn", "outreach"]
-    ]
+    test = aggregate_features(test_dir, config)
+    columns_to_drop = ["member_id", "signup_date", "churn"]
+    feature_cols = [c for c in train.columns if c not in columns_to_drop]
 
     X_train = train[feature_cols]
     y_train = train["churn"].astype(int)
@@ -153,9 +60,10 @@ def run():
         "subsample": [0.8, 1.0],
         "colsample_bytree": [0.6, 0.8, 1.0],
     }
-
-    base = XGBClassifier(eval_metric="logloss", random_state=42)
-
+    scale_pos_weight = round(y_train.value_counts()[0] / y_train.value_counts()[1])
+    base = XGBClassifier(
+        eval_metric="logloss", random_state=42, scale_pos_weight=scale_pos_weight
+    )
     search = RandomizedSearchCV(
         estimator=base,
         param_distributions=param_distributions,
@@ -206,7 +114,7 @@ def run():
 
     # Evaluate on test set
     proba = final_model.predict_proba(X_test)[:, 1]
-    preds = (proba >= 0.5).astype(int)
+    preds = (proba >= config["threshold"]).astype(int)
 
     try:
         test_auc = roc_auc_score(y_test, proba)
@@ -220,7 +128,7 @@ def run():
     else:
         print("  ROC-AUC not available")
 
-    print("\nClassification report (threshold=0.5):")
+    print(f"\nClassification report (threshold={config['threshold']}):")
     print(classification_report(y_test, preds, zero_division=0))
 
     # Save test predictions
