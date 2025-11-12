@@ -6,6 +6,6 @@
   "cv_95ci_upper": 0.5759331435848227,
   "test_auc": 0.562260109595716,
   "baseline_auc": 0.489076,
-  "model_path": "c:\\Users\\elad\\Desktop\\rnd\\VI\\wellco_churn\\models\\best_model_20251112T124306Z.joblib",
+  "model_path": "c:\\Users\\elad\\Desktop\\rnd\\VI\\wellco_churn\\models\\best_model_20251112T170455Z.joblib",
   "predictions_path": "c:\\Users\\elad\\Desktop\\rnd\\VI\\wellco_churn\\outputs\\test_predictions.csv"
 }

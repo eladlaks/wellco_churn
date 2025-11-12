@@ -8,6 +8,12 @@ import joblib
 from scipy import stats
 import json
 from datetime import datetime
+from process_datasets import get_web_feats
+import yaml
+
+# Load the YAML config file
+with open("wellco_churn\\config.yaml", "r") as f:
+    config = yaml.safe_load(f)
 
 
 def aggregate_features(data_dir):
@@ -32,14 +38,27 @@ def aggregate_features(data_dir):
         app_feats = app.groupby("member_id").size().rename("session_count")
     else:
         app_feats = pd.Series(dtype=int, name="session_count")
-    def get_web_feats(web_path):
-        web = pd.read_csv(web_path)
-        web.
 
     if os.path.exists(web_path):
         web = pd.read_csv(web_path)
-        # web_feats = web.groupby("member_id").size().rename("web_visit_count")
-        web_feats = get_web_feats(web_path)
+
+        try:
+
+            web_feats = get_web_feats(web_path, config)
+            # normalize return to Series indexed by member_id with a sensible name
+            if isinstance(web_feats, pd.DataFrame):
+                if "member_id" in web_feats.columns:
+                    web_feats = web_feats.set_index("member_id")
+                # if single-column DF, convert to Series
+                if web_feats.shape[1] == 1:
+                    web_feats = web_feats.iloc[:, 0]
+            if isinstance(web_feats, pd.Series):
+                if web_feats.name is None:
+                    web_feats = web_feats.rename("web_visit_count")
+        except Exception:
+            # fallback to simple aggregation if get_web_feats is not available/applicable
+            web = pd.read_csv(web_path)
+            web_feats = web.groupby("member_id").size().rename("web_visit_count")
     else:
         web_feats = pd.Series(dtype=int, name="web_visit_count")
 

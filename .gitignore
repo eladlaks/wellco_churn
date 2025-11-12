@@ -1,2 +1,4 @@
 .venv/**
 .github/copilot-instructions.md
+models/**
+**/__pycache__/**
