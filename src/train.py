@@ -16,7 +16,7 @@ import yaml
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(repo_root)  # add repo root so `src` package can be imported
 from src.process_datasets import get_web_feats
-from src.process_datasets import aggregate_features
+from src.process_datasets import aggregate_features, create_data
 from src.eval import read_baseline_auc
 
 
@@ -27,23 +27,8 @@ with open(os.path.join(repo_root, "config.yaml"), "r") as f:
 
 def run():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    train_dir = os.path.join(repo_root, "data", "train")
-    test_dir = os.path.join(repo_root, "data", "test")
 
-    print("Aggregating train features...")
-    train = aggregate_features(train_dir, config)
-    print("Aggregating test features...")
-    test = aggregate_features(test_dir, config)
-    columns_to_drop = ["member_id", "signup_date", "churn"]
-    feature_cols = [c for c in train.columns if c not in columns_to_drop]
-
-    X_train = train[feature_cols]
-    y_train = train["churn"].astype(int)
-    X_test = test[feature_cols]
-    y_test = test["churn"].astype(int)
-
-    print(f"Training data: {len(X_train)} samples; test data: {len(X_test)} samples")
-
+    X_train, y_train, X_test, y_test, train, test = create_data(repo_root, config)
     # Determine sensible number of CV folds based on class balance
     desired_splits = 5
     min_class_count = int(y_train.value_counts().min())

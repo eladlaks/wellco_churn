@@ -1,5 +1,5 @@
 web_feats:
-  use_custom_features: true
+  use_custom_features_web: false
   use_domain: false
 threshold: 0.5
 # Uplift modeling method. Options:

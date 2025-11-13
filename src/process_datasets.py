@@ -5,7 +5,7 @@ from IPython.display import display
 
 def get_web_feats(web_path, config):
     web = pd.read_csv(web_path)
-    if config.get("web_feats").get("use_custom_features") is not True:
+    if config.get("web_feats").get("use_custom_features_web") is not True:
         result = web.groupby("member_id").size().rename("web_visit_count")
     else:
         web["url_category"] = web["url"].str.split("/").str[3]
@@ -41,6 +41,26 @@ def get_web_feats(web_path, config):
             )
 
     return result
+
+
+def create_data(repo_root, config):
+    train_dir = os.path.join(repo_root, "data", "train")
+    test_dir = os.path.join(repo_root, "data", "test")
+
+    print("Aggregating train features...")
+    train = aggregate_features(train_dir, config)
+    print("Aggregating test features...")
+    test = aggregate_features(test_dir, config)
+    columns_to_drop = ["member_id", "signup_date", "churn"]
+    feature_cols = [c for c in train.columns if c not in columns_to_drop]
+
+    X_train = train[feature_cols]
+    y_train = train["churn"].astype(int)
+    X_test = test[feature_cols]
+    y_test = test["churn"].astype(int)
+
+    print(f"Training data: {len(X_train)} samples; test data: {len(X_test)} samples")
+    return X_train, y_train, X_test, y_test, train, test
 
 
 def pick(path_dir, name):

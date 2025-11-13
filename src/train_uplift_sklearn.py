@@ -10,7 +10,10 @@ import json
 from datetime import datetime
 import sys
 import yaml
-
+import numpy as np
+import pandas as pd
+from causalml.inference.tree import UpliftTreeClassifier
+from sklearn.model_selection import train_test_split
 
 # ensure repository root is on sys.path based on this file's location (works regardless of cwd)
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -228,11 +231,6 @@ def run():
     y_test = test["churn"].astype(int)
     treatment_test = test["outreach"].astype(int)
 
-    # Combine for two-model approach
-    X_combined = pd.concat([X_train, X_test], ignore_index=True)
-    y_combined = pd.concat([y_train, y_test], ignore_index=True)
-    treatment_combined = pd.concat([treatment_train, treatment_test], ignore_index=True)
-
     print(f"\nTraining data: {len(X_train)} samples; test data: {len(X_test)} samples")
     print(
         f"Treatment in train: {treatment_train.sum()} / {len(treatment_train)} ({100*treatment_train.mean():.1f}%)"
@@ -248,6 +246,22 @@ def run():
     outputs_dir = os.path.join(repo_root, "outputs")
     os.makedirs(outputs_dir, exist_ok=True)
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    # For testing: use causalml's UpliftTreeClassifier
+    # --- Step 1: Prepare Data ---
+    # --- Step 2: Train Uplift Model ---
+    uplift_model = UpliftTreeClassifier(
+        control_name="0", max_depth=3, min_samples_leaf=100, n_reg=1000
+    )
+
+    uplift_model.fit(X=X_train, treatment=treatment_train, y=y_train)
+
+    # --- Step 3: Predict Uplift ---
+    uplift_pred = uplift_model.predict(X)
+
+    pd.DataFrame(
+        {"uplift_pred": uplift_pred[:10], "treatment": treatment[:10], "y": y[:10]}
+    )
 
     if uplift_method == "s_learner":
         print("\n" + "=" * 70)
