@@ -1,5 +1,0 @@
-categorical url visits
-make sure ouliers in the time window
-process time stamp
-
-prioritize for the list wanted claims
