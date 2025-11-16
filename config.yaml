@@ -1,6 +1,6 @@
 web_feats:
-  use_custom_features_web: false
-  use_domain: false
+  use_custom_features_web: true
+  use_domain: true
 threshold: 0.5
 # Uplift modeling method. Options:
 #  - two_model: train separate models for treatment and control (default)

@@ -10,7 +10,9 @@ import json
 from datetime import datetime
 import sys
 import yaml
-
+from sklearn.linear_model import LogisticRegression
+from sklearn.utils import resample
+import re
 
 # ensure repository root is on sys.path based on this file's location (works regardless of cwd)
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -217,9 +219,55 @@ def train_s_learner_uplift(
     return results, model, uplift
 
 
+def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cleans column names: replaces whitespace with underscores,
+    removes special characters, and ensures valid Python identifiers.
+    """
+    new_columns = []
+    for col in df.columns:
+        # 1. Replace whitespace with underscores
+        clean_col = re.sub(r"\s+", "_", col)
+        # 2. Remove non-alphanumeric characters except underscore
+        clean_col = re.sub(r"[^\w]", "", clean_col)
+        # 3. Ensure it doesn't start with a number
+        if re.match(r"^\d", clean_col):
+            clean_col = "_" + clean_col
+        new_columns.append(clean_col)
+    df.columns = new_columns
+    return df
+
+
+def load_data():
+    X_train = pd.read_csv(
+        repo_root / "data" / "train" / "churn_labels_with_all_feats.csv"
+    )
+    X_test = pd.read_csv(
+        repo_root / "data" / "test" / "test_churn_labels_with_all_feats.csv"
+    )
+    print(len(X_train.columns))
+    X_train = clean_column_names(X_train)
+    print(len(X_train.columns))
+    X_test = clean_column_names(X_test)
+    y_train = X_train["churn"].astype(int)
+    treatment_train = X_train["outreach"].astype(int)
+
+    y_test = X_test["churn"].astype(int)
+    treatment_test = X_test["outreach"].astype(int)
+
+    print(f"\nTraining data: {len(X_train)} samples; test data: {len(X_test)} samples")
+    print(
+        f"Treatment in train: {treatment_train.sum()} / {len(treatment_train)} ({100*treatment_train.mean():.1f}%)"
+    )
+    print(
+        f"Treatment in test: {treatment_test.sum()} / {len(treatment_test)} ({100*treatment_test.mean():.1f}%)"
+    )
+    return X_test, X_train
+
+
 def run():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
+    X_train, y_train = load_data()
     X_train, y_train, X_test, y_test, train, test = create_data(repo_root, config)
 
     y_train = train["churn"].astype(int)
@@ -240,6 +288,152 @@ def run():
     print(
         f"Treatment in test: {treatment_test.sum()} / {len(treatment_test)} ({100*treatment_test.mean():.1f}%)"
     )
+
+    # ---------- Propensity score helpers ----------
+    def estimate_propensity_scores(X, treatment, random_state=42):
+        """
+        Fit a logistic regression to estimate propensity scores P(T=1|X).
+        Returns a pandas Series of propensity scores aligned with X.index
+        """
+        lr = LogisticRegression(
+            solver="lbfgs", max_iter=1000, random_state=random_state
+        )
+        # use fillna to be robust
+        X_fit = X.fillna(0)
+        lr.fit(X_fit, treatment.values)
+        ps = lr.predict_proba(X_fit)[:, 1]
+        return pd.Series(ps, index=X.index)
+
+    def compute_ipw_ate(y, treatment, ps, eps=1e-6):
+        """
+        Compute ATE using inverse-probability weighting (IPW).
+        Returns dict with ate and per-group weighted means.
+        We report ATE as (mean_control - mean_treatment) so positive implies
+        treatment reduces churn probability.
+        """
+        ps = ps.clip(eps, 1 - eps)
+        w_t = treatment / ps
+        w_c = (1 - treatment) / (1 - ps)
+
+        # normalized weights per group
+        mean_treated = (w_t * y).sum() / w_t.sum()
+        mean_control = (w_c * y).sum() / w_c.sum()
+        ate = float(mean_control - mean_treated)
+        return {
+            "ate": ate,
+            "mean_treated_weighted": float(mean_treated),
+            "mean_control_weighted": float(mean_control),
+        }
+
+    def compute_stratified_ate(y, treatment, ps, n_strata=5):
+        """
+        Stratify by propensity quantiles and compute a weighted average
+        of within-strata differences (control - treated).
+        """
+        df = pd.DataFrame({"y": y.values, "t": treatment.values, "ps": ps.values})
+        df["strata"] = pd.qcut(df["ps"], q=n_strata, duplicates="drop")
+        strata_results = []
+        total_n = len(df)
+        for strata, group in df.groupby("strata"):
+            n = len(group)
+            if group["t"].sum() == 0 or (group["t"] == 0).sum() == 0:
+                # skip strata without both groups
+                continue
+            mean_t = group.loc[group["t"] == 1, "y"].mean()
+            mean_c = group.loc[group["t"] == 0, "y"].mean()
+            strata_results.append({"n": n, "diff": float(mean_c - mean_t)})
+
+        if len(strata_results) == 0:
+            return {"ate": None, "details": []}
+
+        # weight by strata sample size
+        ate = sum(r["n"] * r["diff"] for r in strata_results) / total_n
+        return {"ate": float(ate), "details": strata_results}
+
+    # Check for propensity method in config
+    propensity_method = config.get("propensity_method", "none")
+    propensity_results = None
+    if propensity_method and propensity_method.lower() != "none":
+        print(f"\nRunning propensity score method: {propensity_method}")
+        # estimate propensity scores on combined data so ps aligns with combined vectors
+        try:
+            ps_combined = estimate_propensity_scores(X_combined, treatment_combined)
+            # split back to train/test if needed
+            ps_train = ps_combined.iloc[: len(X_train)].reset_index(drop=True)
+            ps_test = ps_combined.iloc[len(X_train) :].reset_index(drop=True)
+
+            if propensity_method == "ipw":
+                # IPW ATE on combined data
+                ipw = compute_ipw_ate(
+                    y_combined.reset_index(drop=True),
+                    treatment_combined.reset_index(drop=True),
+                    ps_combined.reset_index(drop=True),
+                )
+                propensity_results = {"method": "ipw", "results": ipw}
+                print(f"IPW ATE (control - treated) = {ipw['ate']}")
+
+            elif propensity_method == "stratification":
+                strat = compute_stratified_ate(
+                    y_combined.reset_index(drop=True),
+                    treatment_combined.reset_index(drop=True),
+                    ps_combined.reset_index(drop=True),
+                    n_strata=5,
+                )
+                propensity_results = {"method": "stratification", "results": strat}
+                print(f"Stratified ATE (control - treated) = {strat.get('ate')}")
+
+            elif propensity_method == "ps_adjusted_s_learner":
+                # include propensity score as an additional feature in S-learner
+                print(
+                    "Training S-learner with propensity score as an extra covariate..."
+                )
+                X_train_aug = X_train.copy().reset_index(drop=True)
+                X_train_aug["ps"] = ps_train
+                X_test_aug = X_test.copy().reset_index(drop=True)
+                X_test_aug["ps"] = ps_test
+
+                # reuse existing s-learner training function but with augmented features
+                results_ps, model_ps, uplift_ps = train_s_learner_uplift(
+                    X_train_aug,
+                    y_train,
+                    X_test_aug,
+                    y_test,
+                    treatment_train,
+                    treatment_test,
+                )
+                propensity_results = {
+                    "method": "ps_adjusted_s_learner",
+                    "results": results_ps,
+                }
+                # save model
+                models_dir = os.path.join(repo_root, "models")
+                os.makedirs(models_dir, exist_ok=True)
+                timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+                model_path = os.path.join(
+                    models_dir, f"s_learner_ps_model_{timestamp}.joblib"
+                )
+                joblib.dump(model_ps, model_path)
+                print(f"Saved PS-adjusted S-learner to: {model_path}")
+
+            else:
+                print(
+                    f"Unknown propensity_method '{propensity_method}' - supported: ipw, stratification, ps_adjusted_s_learner"
+                )
+
+            # persist propensity results to outputs
+            outputs_dir = os.path.join(repo_root, "outputs")
+            os.makedirs(outputs_dir, exist_ok=True)
+            if propensity_results is not None:
+                out_path = os.path.join(
+                    outputs_dir,
+                    f"propensity_results_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json",
+                )
+                with open(out_path, "w") as fh:
+                    json.dump(propensity_results, fh, indent=2)
+                print(f"Saved propensity results to: {out_path}")
+
+        except Exception as e:
+            print("Propensity score estimation failed:", e)
 
     # Choose uplift method (two-model vs meta-learner S-learner)
     uplift_method = config.get("uplift_method", "two_model")
@@ -374,9 +568,10 @@ def run():
             print("FEATURE IMPORTANCE COMPARISON")
             print("=" * 70)
 
+            # derive feature names from X_train columns to avoid undefined variable
             importance_df = pd.DataFrame(
                 {
-                    "feature": feature_cols,
+                    "feature": list(X_train.columns),
                     "treatment_importance": treatment_model.feature_importances_,
                     "control_importance": control_model.feature_importances_,
                 }

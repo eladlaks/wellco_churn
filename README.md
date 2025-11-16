@@ -27,3 +27,35 @@ Notes:
 - Baseline AUC is read from `data/auc_baseline_test.txt` when present and printed for comparison.
 
 If you want, I can add a small test or CI step that runs `src/train.py` on a tiny synthetic sample and asserts it completes.
+
+
+
+Required Deliverables
+● A public Git repository containing a reproducible end-to-end solution.
+● A README file detailing setup and run instructions, along with a concise description
+of your approach.
+● An executive presentation (3-5 slides) tailored for non-technical stakeholders.
+● A CSV file containing a sorted list of the top 'n' members for outreach. This file must
+include, at minimum, member_id, a prioritization score, and the member's rank.
+Note: Use the provided test files (test_*.csv) to evaluate your final model and compare
+your results to the test baseline metrics (*_baseline_test.txt).
+Evaluation Criteria
+Your submission will be evaluated based on the following aspects:
+● Code Clarity and Readability
+● Solution Robustness
+● Visualization Quality
+● Presenting Results
+● Storytelling
+Additional Guidance
+To help you focus your efforts, please address the following in your approach and
+documentation:
+● Feature Selection: Explain which features you chose to use and why. Consider
+domain relevance, data quality, and predictive power.
+● Model Evaluation: Describe how you evaluate model performance and justify your
+chosen metrics.
+● Using Outreach Data in Modelling: The dataset includes an outreach event that
+occurred between the observation period and the churn measurement window. You
+are expected to incorporate this information into your modelling and explain how it
+influences your approach and results.
+● Selecting n (Outreach Size): Describe how you determine the optimal outreach
+size. Is it driven only by cost, or are there other factors you considered?
