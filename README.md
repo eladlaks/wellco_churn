@@ -4,8 +4,14 @@ Quick start - how to run
 
 git clone 
 create venv (python 3.10)  - python -m venv .venv
+
+
 activate venv
+
+
 install reqiierements - pip install -r requierements.txt
+
+
 run the main nootbook.
 
 
