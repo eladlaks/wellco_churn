@@ -1,4 +1,14 @@
 WellCo Churn Prediction - Uplift Modeling Project
+
+Quick start - how to run
+
+git clone 
+create venv (python 3.10)  - python -m venv .venv
+activate venv
+install reqiierements - pip install -r requierements.txt
+run the main nootbook.
+
+
 Project Overview
 This repository contains a comprehensive uplift modeling solution for WellCo's member churn prediction and intervention optimization problem. The goal is to identify which members would benefit most from outreach interventions to reduce churn, using historical data that includes an outreach treatment experiment.
 
