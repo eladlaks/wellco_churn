@@ -75,24 +75,40 @@ The original outreach data was **not a perfectly randomized controlled trial (RC
 * **Mitigation Attempt:** I addressed this by estimating **Propensity Scores** to adjust for the non-random assignment. This ensures better covariate balance and common support, making the causal estimates more robust, though it cannot fully eliminate confounding from unobserved variables.
 
 ---
+## 🔬 Feature Selection & Engineering ⚙️
 
-## 🔬 Feature Selection & Engineering
+Based on `wellco_client_brief.txt` and schema analysis, features were meticulously categorized and engineered to maximize predictive power and **treatment interaction capture**, which is crucial for estimating **heterogeneous uplift effects**.
 
-Based on `wellco_client_brief.txt` and schema analysis, features were categorized and engineered to maximize predictive power and treatment interaction capture.
+---
 
 ### Domain-Relevant Features
 
-| Category | Key Indicators
-| :--- | :--- | 
-| **Clinical** | ICD-10 codes (E11.9 Diabetes, I10 Hypertension), Claims frequency/cost, Chronic condition flags.
-| **Engagement** | App usage frequency/recency, Web visit patterns, Session duration, Meal logging/Activity tracking. 
-| **Temporal** | Days since signup, Recent activity trends , Engagement velocity (increasing/declining). 
+The analysis focused on creating features that capture a member's **clinical risk**, **digital engagement intensity**, and their **temporal behavior patterns**.
+
+| Category | Key Indicators | Specific Examples (Features) |
+| :--- | :--- | :--- |
+| **Clinical** | **Claims frequency/cost**, Chronic condition flags, **ICD-10 codes** related to high-risk chronic diseases. | `total_claims`, `unique_icd_codes`, `has_icd_I10` (Hypertension), `has_icd_E11_9` (Type 2 Diabetes), `has_icd_Z71_3` (Dietary Counseling). |
+| **Engagement** | **App/Web usage frequency**, recency, diversity, and feature-specific tracking. | `app_sessions`, `active_days`, `total_web_visits`, `unique_domains`, `wellco_domain_visits`, `ratio_wellco_domain`. |
+| **Temporal** | **Member lifetime**, activity patterns, and **velocity** (recent vs. past activity). | `tenure_days`, `early_usage`, `late_usage`, `usage_trend`, `visit_trend`, `early_claims`, `late_claims`, `claim_trend`. |
+
+---
 
 ### Feature Engineering Process
-* **Missing Data:** Count-based features were **imputed with 0** (assuming no engagement = 0 events).
-* **Redundancy:** Highly correlated features ($|\text{correlation}| > 0.95$) were removed using `feature_selection()` in `data_process.py`.
-* **Treatment Interactions:** Explicit interaction terms were created between key clinical/engagement features and the treatment status to help meta-learners capture heterogeneous effects.
 
+The process included specific transformations and selection steps to ensure data quality and relevance for causal modeling:
+
+* **Missing Data Imputation:**
+    * Count-based features, such as `app_sessions` or `total_claims`, were **imputed with 0** (assuming the absence of a record signifies zero events or engagement).
+
+* **Behavioral Trends & Velocity:**
+    * **Trend features** (`usage_trend`, `visit_trend`, `claim_trend`) were calculated as the difference or ratio between **recent** (`late_*`) and **past** (`early_*`) activity periods. This is vital as **declining engagement is a strong churn signal**.
+    * **Tenure** (`tenure_days`) was used as a normalization factor for many rate-based features.
+
+* **Redundancy Reduction:**
+    * Highly correlated features ($|\text{correlation}| > 0.95$) were removed using `feature_selection()` in `data_process.py` to prevent multicollinearity, which is particularly important for meta-learner stability.
+
+* **Treatment Interactions (Heterogeneity Capture):**
+    * **Explicit interaction terms** (e.g., Feature $\times$ Treatment Status) were created between key features (like `has_icd_E11_9`, `app_sessions`) and the treatment status. This allows the meta-learners to explicitly model **heterogeneous effects**, capturing *how* the outreach impact differs based on a member's clinical or engagement profile.
 ---
 
 ## 📊 Modeling & Causal Inference
