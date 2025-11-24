@@ -165,14 +165,7 @@ The optimal $n$ is determined where the **Marginal Uplift** begins to equal the 
 * **Factors Considered:** Marginal Uplift Decay, Capacity Constraints (max budget), and Risk Tolerance.
 * **Cost-Benefit Integration (Future):** Target where $\text{Marginal\_Uplift} \times \text{V}_{\text{churn}} \ge \text{C}_{\text{outreach}}$.
 
-### Results for This Dataset
 
-| Metric | Value | Interpretation |
-| :--- | :--- | :--- |
-| **Optimal Targeting Size ($\mathbf{n}$)** | **1,547** members | Target $\approx 15-20\%$ of the at-risk population. |
-| **Expected Additional Preventions** | $\sim 12$ churns | Compared to a random targeting strategy. |
-
----
 
 ## 🔮 Future Work & Continuous Improvement
 
